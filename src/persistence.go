@@ -5,6 +5,9 @@ import (
 	"encoding/gob"
 )
 
+/*
+Transform a block into a byte array so that it can be persisted
+ */
 func (b *Block) Serialize() ([]byte, error) {
 	var result bytes.Buffer
 	encoder := gob.NewEncoder(&result)
@@ -15,8 +18,11 @@ func (b *Block) Serialize() ([]byte, error) {
 	}
 }
 
+/*
+Transform a byte array into a block
+ */
 func DeserializeBlock(b []byte) (*Block, error) {
-	var block *Block
+	block := &Block{}
 	decoder := gob.NewDecoder(bytes.NewReader(b))
 	if err := decoder.Decode(block); err != nil {
 		return nil, err

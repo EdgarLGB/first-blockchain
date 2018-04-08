@@ -22,21 +22,28 @@ func NewProofOfWork(block *Block) *ProofOfWork {
 Join the block header with the nonce
  */
 func (pow *ProofOfWork) prepareData(nonce int) ([]byte) {
+	var tb []byte
+	for _, t := range pow.block.Transactions {
+		tb = append(tb, t.serialize()...)
+	}
 	// the int64 needs to be converted to hex and then to be concatenated
 	return bytes.Join([][]byte{
-		pow.block.Data,
+		tb,
 		pow.block.PrevBlockHash,
 		IntToHex(pow.block.Timestamp),
 		IntToHex(int64(TargetBits)),
 		IntToHex(int64(nonce))}, []byte{})
 }
 
+/**
+  Do the POW to mine the block
+ */
 func (pow *ProofOfWork) Run() {
 	var hashInt big.Int
 	var hash [32]byte // the type of hash value is defined by result of the sha256 function
 	nonce := 0
 
-	fmt.Printf("Start mining the block \"%s\"\n", pow.block.Data)
+	fmt.Printf("Start mining the block \"%s\"\n", pow.block.Hash)
 	for nonce < MaxNonce {
 		data := pow.prepareData(nonce)
 		hash = sha256.Sum256(data)

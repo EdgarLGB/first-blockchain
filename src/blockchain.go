@@ -4,19 +4,23 @@ import (
 	"github.com/boltdb/bolt"
 	"log"
 	"fmt"
+	"encoding/hex"
 )
 
 const BlocksDbPath = "blocks.db"
-const BlocksBucketName = "blocks"
+const BlocksBucketName = "blocks-2"
 
 type BlockChain struct {
 	tip []byte	// the hash value of the last block in this chain
-	db *bolt.DB
+	db *bolt.DB  // we use bolt as database
 }
 
-func (bc *BlockChain) AddBlock(data string) {
+/**
+  Will be changed to add transactions into the blockchain
+ */
+func (bc *BlockChain) MineBlock(txs []*Transaction) {
 	// mine a new block according to the hash value of the last block
-	block := NewBlock(data, bc.tip)
+	block := NewBlock(txs, bc.tip)
 	bc.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte([]byte(BlocksBucketName)))
 		blockSerialized, err := block.Serialize()
@@ -36,8 +40,8 @@ func (bc *BlockChain) AddBlock(data string) {
 	})
 }
 
-func NewGenesisBlock() *Block {
-	return NewBlock("Genesis Block", []byte{})
+func NewGenesisBlock(coinbase *Transaction) *Block {
+	return NewBlock([]*Transaction{coinbase}, []byte{})
 }
 
 /*
@@ -57,7 +61,8 @@ func NewBlockChain() *BlockChain {
 			if err != nil {
 				return fmt.Errorf("create bucket: %s", err)
 			}
-			genesis := NewGenesisBlock()
+			coinbase := NewCoinbaseTransaction()
+			genesis := NewGenesisBlock(coinbase)
 			genesisBytes, err := genesis.Serialize()
 			if err != nil {
 				return fmt.Errorf("serialize genesis: %s", err)
@@ -80,7 +85,24 @@ func NewBlockChain() *BlockChain {
 }
 
 func (bc *BlockChain) FindSpendableOutputs(address string, amount int) (int, map[string][]int) {
-	
+	unspentOutputs := make(map[string][]int)
+	unspentTxs := bc.FindUnspentTransactions(address)
+	accumulated := 0
+
+	Work:
+		for _, tx := range unspentTxs {
+			txId := hex.EncodeToString(tx.ID)
+			for outId, out := range tx.Vout {
+				if out.CanBeUnlocked(address) && accumulated < amount{
+					accumulated += out.Value
+					unspentOutputs[txId] = append(unspentOutputs[txId], outId)
+				}
+				if accumulated >= amount {
+					break Work
+				}
+			}
+		}
+	return accumulated, unspentOutputs
 }
 
 type BlockChainIterator struct {
@@ -90,6 +112,48 @@ type BlockChainIterator struct {
 
 func (bc *BlockChain) Iterator() *BlockChainIterator  {
 	return &BlockChainIterator{bc.tip, bc.db}
+}
+
+/**
+ TODO It seems incorrect to include transactions containing the spent output. Should return directly the unspent outputs
+ */
+func (bc *BlockChain) FindUnspentTransactions(addr string) []*Transaction {
+	var unspentTXs []*Transaction
+	spentTXOs := make(map[string][]int)
+	it := bc.Iterator()
+
+	for {
+		block := it.Next()
+		for _, tx := range block.Transactions {
+			txId := hex.EncodeToString(tx.ID)
+		Output:
+			for outId, out := range tx.Vout {
+				// check if already spent
+				if spentTXOs[txId] != nil {
+					for _, id := range spentTXOs[txId] {
+						if id == outId {
+							continue Output
+						}
+					}
+				}
+				if out.CanBeUnlocked(addr) {
+					unspentTXs = append(unspentTXs, tx)
+				}
+			}
+			if tx.isCoinbase() == false {
+				for _, in := range tx.Vin {
+					if in.CanUnlockOutput(addr) {
+						inTxId := hex.EncodeToString(in.Txid)
+						spentTXOs[inTxId] = append(spentTXOs[inTxId], in.Vout)
+					}
+				}
+			}
+		}
+		if len(block.PrevBlockHash) == 0 {
+			break
+		}
+	}
+	return unspentTXs
 }
 
 func (bci *BlockChainIterator) Next() *Block {

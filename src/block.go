@@ -14,25 +14,29 @@ const MaxNonce = math.MaxInt64
 
 type Block struct {
 	Timestamp     int64
-	Data          []byte
+	Transactions  []*Transaction	// should be changed to Transaction
 	Hash          []byte
 	PrevBlockHash []byte
 	Nonce         int
 }
 
 func (b *Block) String() string {
-	return fmt.Sprintf("Prev. hash: %x\n", b.PrevBlockHash) + fmt.Sprintf("Data: %s\n", b.Data) + fmt.Sprintf("Hash: %x\n", b.Hash) + fmt.Sprintf("Nonce: %d\n", b.Nonce)
+	return fmt.Sprintf("Prev. hash: %x\n", b.PrevBlockHash) + fmt.Sprintf("Transactions: %s\n", b.Transactions) + fmt.Sprintf("Hash: %x\n", b.Hash) + fmt.Sprintf("Nonce: %d\n", b.Nonce)
 }
 
 func (b *Block) setHash() {
 	timestamp := []byte(strconv.FormatInt(b.Timestamp, 10))
-	headers := bytes.Join([][]byte{timestamp, b.Data, b.PrevBlockHash}, []byte{})
+	var tb []byte
+	for _, t := range b.Transactions  {
+		tb = append(tb, t.serialize()...)
+	}
+	headers := bytes.Join([][]byte{timestamp, tb, b.PrevBlockHash}, []byte{})
 	hash := sha256.Sum256(headers)
 	b.Hash = hash[:]
 }
 
-func NewBlock(data string, prevBlockHash []byte) *Block {
-	block := &Block{time.Now().Unix(), []byte(data), []byte{}, prevBlockHash, 0}
+func NewBlock(ts []*Transaction, prevBlockHash []byte) *Block {
+	block := &Block{time.Now().Unix(), ts, []byte{}, prevBlockHash, 0}
 	// do some difficult proof of work
 	pow := NewProofOfWork(block)
 	pow.Run()
